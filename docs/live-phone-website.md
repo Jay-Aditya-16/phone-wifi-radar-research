@@ -4,7 +4,7 @@ The runnable phone app lives in `site/`. It is a phone-first 3D RF mapper with:
 
 - phone motion/orientation capture
 - a small 2D EKF for phone trajectory
-- a Three.js 3D room and RF heatmap
+- a Three.js 3D room, RF volume columns, object markers, and human-pass trails
 - WebSocket ingest for real CSI/BFI/RTT/RSSI/fusion frames
 - JSONL export for MATLAB processing
 
@@ -17,6 +17,8 @@ Think of it as an RF sensing cockpit:
 - phone-only: dead-reckoned room walk, manual samples, demo heatmap
 - phone plus Android RTT/native helper: EKF range fusion
 - phone plus ESP32/Nexmon/PicoScenes/Wi-BFI: live RF heat and occupancy
+
+The app can show where the phone moved from IMU/EKF data, where a human passed from external `targets`, and where objects are marked from the phone or an external `objects` feed. It still cannot infer arbitrary object geometry from a phone browser alone.
 
 ## Run Locally
 
@@ -91,8 +93,9 @@ Use this for a full room survey.
 8. Pause at corners and tap `Mark corner`.
 9. Walk parallel lanes through the room, roughly 0.5 m apart.
 10. Tap `Add RF sample` at grid points or whenever an external signal changes.
-11. Tap `Stop scan`.
-12. Tap `Export JSONL` for MATLAB.
+11. Type a label and tap `Mark object` when the phone is next to a chair, desk, bed, or other landmark.
+12. Tap `Stop scan`.
+13. Tap `Export JSONL` for MATLAB.
 
 This gives a phone trajectory and sample map. Without external RF measurements, it is not a Wi-Fi room scan; it is a phone-motion survey with manual/demo samples.
 
@@ -107,6 +110,7 @@ Use this for person movement.
 5. Connect an external RF feed from ESP32 CSI, Wi-BFI, PicoScenes, Nexmon, SDR, or a native Android RTT/RSSI helper.
 6. Ask the person to walk known paths for calibration.
 7. Watch the 3D target markers and heatmap.
+8. Use the red trail and `Last pass` readout to see where and when a person moved through the room.
 
 Phone-only fixed mode cannot sense another person moving. It can only report that the phone itself moved.
 
@@ -146,9 +150,13 @@ Use these fields for live movement:
 - `ranges`: RTT/RSSI/model-derived ranges to anchors for EKF updates
 - `heatmap`: room RF activity grid
 - `targets`: anonymous person estimates
+- `objects`: known furniture/landmark/object markers
+- `imu`: phone acceleration/orientation snapshot
 - `metrics`: occupancy, confidence, motion, noise
 
-Coordinates in `nodes` and `targets` are normalized from `0` to `1`. The website scales them to the room dimensions.
+Coordinates in `nodes`, `targets`, and `objects` are normalized from `0` to `1`. The website scales them to the room dimensions. Phone-only object markers are saved in room meters and exported back as normalized object coordinates.
+
+The `imu` object stores the phone's latest acceleration/orientation snapshot. Use it to debug phone movement, replay walked scans, and tune EKF process noise; do not treat it as an absolute position source by itself.
 
 ## MATLAB Workflow
 

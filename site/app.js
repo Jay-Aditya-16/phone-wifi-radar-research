@@ -11,17 +11,21 @@ const ui = {
   originButton: $("#originButton"),
   cornerButton: $("#cornerButton"),
   sampleButton: $("#sampleButton"),
+  objectButton: $("#objectButton"),
+  clearTrailButton: $("#clearTrailButton"),
   applyRoomButton: $("#applyRoomButton"),
   connectButton: $("#connectButton"),
   demoButton: $("#demoButton"),
   exportButton: $("#exportButton"),
   clearLogButton: $("#clearLogButton"),
+  objectLabel: $("#objectLabel"),
   wsUrl: $("#wsUrl"),
   roomWidth: $("#roomWidth"),
   roomLength: $("#roomLength"),
   roomHeight: $("#roomHeight"),
   sensorChip: $("#sensorChip"),
   feedChip: $("#feedChip"),
+  imuChip: $("#imuChip"),
   recordChip: $("#recordChip"),
   feedDot: $("#feedDot"),
   xReadout: $("#xReadout"),
@@ -32,10 +36,17 @@ const ui = {
   confidenceMetric: $("#confidenceMetric"),
   sigmaMetric: $("#sigmaMetric"),
   sampleMetric: $("#sampleMetric"),
+  trailMetric: $("#trailMetric"),
+  objectMetric: $("#objectMetric"),
+  imuAx: $("#imuAx"),
+  imuAy: $("#imuAy"),
+  imuAz: $("#imuAz"),
+  imuYaw: $("#imuYaw"),
+  lastPassValue: $("#lastPassValue"),
   eventLog: $("#eventLog")
 };
 
-document.documentElement.dataset.appBuild = "viewer-pan-v2";
+document.documentElement.dataset.appBuild = "map-imu-trails-v1";
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -171,12 +182,31 @@ const state = {
   ws: null,
   headingDeg: 0,
   accelRoom: { x: 0, y: 0 },
+  imu: {
+    ax: 0,
+    ay: 0,
+    az: 0,
+    gx: 0,
+    gy: 0,
+    gz: 0,
+    roomAx: 0,
+    roomAy: 0,
+    magnitude: 0,
+    alpha: 0,
+    beta: 0,
+    gamma: 0,
+    lastAt: 0
+  },
   motion: 0,
   phoneMotion: 0,
   roomMotion: 0,
   samples: [],
   exportedFrames: [],
   corners: [],
+  objects: [],
+  targetHistory: [],
+  lastPass: null,
+  lastTrailRender: 0,
   occupancy: 0,
   confidence: 0,
   heatCols: 28,
@@ -211,6 +241,61 @@ function roomToThree(x, y, z = 0) {
   return new THREE.Vector3(x - state.room.width / 2, z, y - state.room.length / 2);
 }
 
+function formatAge(timestamp) {
+  if (!timestamp) return "never";
+  const seconds = Math.max(0, Math.round((nowMs() - timestamp) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m ${seconds % 60}s ago`;
+}
+
+function imuSnapshot() {
+  return {
+    ax: state.imu.ax,
+    ay: state.imu.ay,
+    az: state.imu.az,
+    room_ax: state.imu.roomAx,
+    room_ay: state.imu.roomAy,
+    magnitude: state.imu.magnitude,
+    yaw_deg: state.headingDeg,
+    beta_deg: state.imu.beta,
+    gamma_deg: state.imu.gamma,
+    phone_motion: state.phoneMotion
+  };
+}
+
+function currentPhonePose() {
+  return {
+    x: state.ekf.x[0],
+    y: state.ekf.x[1],
+    z: 0.22,
+    heading_deg: state.headingDeg,
+    sigma: state.ekf.sigma()
+  };
+}
+
+function makeLabelSprite(text, color = "#12201b") {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "rgba(255,255,255,0.88)";
+  ctx.strokeStyle = "rgba(18,32,27,0.18)";
+  ctx.lineWidth = 8;
+  ctx.fillRect(12, 18, 488, 84);
+  ctx.strokeRect(12, 18, 488, 84);
+  ctx.fillStyle = color;
+  ctx.font = "bold 42px system-ui, -apple-system, Segoe UI, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(text).slice(0, 24), 256, 60);
+  const texture = new THREE.CanvasTexture(canvas);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
+  sprite.scale.set(0.95, 0.24, 1);
+  return sprite;
+}
+
 const three = {
   scene: new THREE.Scene(),
   camera: new THREE.PerspectiveCamera(55, 1, 0.05, 100),
@@ -219,8 +304,14 @@ const three = {
   heatGroup: new THREE.Group(),
   anchorGroup: new THREE.Group(),
   targetGroup: new THREE.Group(),
+  targetTrailGroup: new THREE.Group(),
+  objectGroup: new THREE.Group(),
+  sampleGroup: new THREE.Group(),
+  phoneTrailGroup: new THREE.Group(),
   pathLine: null,
   phoneMesh: null,
+  phoneRing: null,
+  phoneLabel: null,
   wallGroup: new THREE.Group(),
   angle: Math.PI * 0.28,
   pitch: 0.72,
@@ -270,7 +361,7 @@ function setupThree() {
   const directional = new THREE.DirectionalLight(0xffffff, 1.6);
   directional.position.set(3, 6, 4);
   three.scene.add(directional);
-  three.scene.add(three.heatGroup, three.anchorGroup, three.targetGroup, three.wallGroup);
+  three.scene.add(three.heatGroup, three.sampleGroup, three.anchorGroup, three.targetTrailGroup, three.targetGroup, three.objectGroup, three.phoneTrailGroup, three.wallGroup);
 
   three.phoneMesh = new THREE.Mesh(
     new THREE.ConeGeometry(0.12, 0.34, 18),
@@ -278,6 +369,16 @@ function setupThree() {
   );
   three.phoneMesh.rotation.x = Math.PI / 2;
   three.scene.add(three.phoneMesh);
+
+  three.phoneRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.22, 0.012, 8, 36),
+    new THREE.MeshStandardMaterial({ color: 0x426f9f, emissive: 0x123052, emissiveIntensity: 0.25, transparent: true, opacity: 0.78 })
+  );
+  three.phoneRing.rotation.x = -Math.PI / 2;
+  three.scene.add(three.phoneRing);
+
+  three.phoneLabel = makeLabelSprite("PHONE", "#426f9f");
+  three.scene.add(three.phoneLabel);
 
   resetCameraView();
   rebuildRoom();
@@ -327,6 +428,9 @@ function rebuildRoom() {
 
   rebuildHeat();
   rebuildPath();
+  rebuildSamples();
+  rebuildObjects();
+  rebuildTargetTrail();
 }
 
 function colorForHeat(value) {
@@ -342,26 +446,164 @@ function rebuildHeat() {
   for (let y = 0; y < state.heatRows; y += 1) {
     for (let x = 0; x < state.heatCols; x += 1) {
       const value = state.heat[y][x];
-      if (value < 0.03) continue;
+      if (value < 0.035) continue;
+      const columnHeight = 0.03 + value * state.room.height * 0.52;
       const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(cellW * 0.96, 0.018 + value * 0.16, cellL * 0.96),
-        new THREE.MeshStandardMaterial({ color: colorForHeat(value), transparent: true, opacity: 0.35 + value * 0.5 })
+        new THREE.BoxGeometry(cellW * 0.9, columnHeight, cellL * 0.9),
+        new THREE.MeshStandardMaterial({ color: colorForHeat(value), transparent: true, opacity: 0.24 + value * 0.58, roughness: 0.55 })
       );
-      mesh.position.copy(roomToThree((x + 0.5) * cellW, (y + 0.5) * cellL, 0.012 + value * 0.06));
+      mesh.position.copy(roomToThree((x + 0.5) * cellW, (y + 0.5) * cellL, columnHeight / 2));
       three.heatGroup.add(mesh);
     }
   }
 }
 
 function rebuildPath() {
-  if (three.pathLine) three.scene.remove(three.pathLine);
+  three.phoneTrailGroup.clear();
   if (state.path.length < 2) return;
   const points = state.path.slice(-260).map((p) => roomToThree(p.x, p.y, 0.04));
   three.pathLine = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints(points),
     new THREE.LineBasicMaterial({ color: 0x426f9f, linewidth: 2 })
   );
-  three.scene.add(three.pathLine);
+  three.phoneTrailGroup.add(three.pathLine);
+
+  for (let i = 0; i < state.path.length; i += 10) {
+    const point = state.path[i];
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(0.045, 12, 8),
+      new THREE.MeshStandardMaterial({ color: 0x426f9f, transparent: true, opacity: 0.46, roughness: 0.35 })
+    );
+    marker.position.copy(roomToThree(point.x, point.y, 0.075));
+    three.phoneTrailGroup.add(marker);
+  }
+}
+
+function rebuildSamples() {
+  three.sampleGroup.clear();
+  for (const sample of state.samples.slice(-180)) {
+    const height = 0.12 + sample.strength * 0.62;
+    const mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.045, 0.07, height, 14),
+      new THREE.MeshStandardMaterial({ color: colorForHeat(sample.strength), transparent: true, opacity: 0.78, roughness: 0.45 })
+    );
+    mesh.position.copy(roomToThree(sample.x, sample.y, height / 2));
+    three.sampleGroup.add(mesh);
+  }
+}
+
+function rebuildObjects() {
+  three.objectGroup.clear();
+  for (const object of state.objects) {
+    const box = new THREE.Mesh(
+      new THREE.BoxGeometry(0.22, 0.22, 0.22),
+      new THREE.MeshStandardMaterial({ color: 0xd99a37, emissive: 0x5d3100, emissiveIntensity: 0.18, roughness: 0.42 })
+    );
+    box.position.copy(roomToThree(object.x, object.y, object.z || 0.32));
+    three.objectGroup.add(box);
+
+    const post = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.018, 0.018, 0.72, 10),
+      new THREE.MeshStandardMaterial({ color: 0xd99a37, transparent: true, opacity: 0.55 })
+    );
+    post.position.copy(roomToThree(object.x, object.y, 0.36));
+    three.objectGroup.add(post);
+
+    const label = makeLabelSprite(object.label || object.id || "object", "#7f551b");
+    label.position.copy(roomToThree(object.x, object.y, 0.78));
+    three.objectGroup.add(label);
+  }
+}
+
+function rebuildTargetTrail() {
+  three.targetTrailGroup.clear();
+  const recent = state.targetHistory.slice(-420);
+  const ids = [...new Set(recent.map((point) => point.id))];
+  for (const id of ids) {
+    const pointsForId = recent.filter((point) => point.id === id);
+    if (pointsForId.length > 1) {
+      const linePoints = pointsForId.map((point) => roomToThree(point.x, point.y, 0.11));
+      three.targetTrailGroup.add(new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(linePoints),
+        new THREE.LineBasicMaterial({ color: 0xc95c4a, linewidth: 2 })
+      ));
+    }
+
+    for (let i = 0; i < pointsForId.length; i += 4) {
+      const point = pointsForId[i];
+      const age = clamp((nowMs() - point.t) / 60000, 0, 1);
+      const marker = new THREE.Mesh(
+        new THREE.SphereGeometry(0.045 + point.confidence * 0.035, 12, 8),
+        new THREE.MeshStandardMaterial({ color: 0xc95c4a, transparent: true, opacity: 0.24 + (1 - age) * 0.46, roughness: 0.36 })
+      );
+      marker.position.copy(roomToThree(point.x, point.y, 0.13 + point.confidence * 0.08));
+      three.targetTrailGroup.add(marker);
+    }
+
+    const latest = pointsForId[pointsForId.length - 1];
+    if (latest) {
+      const label = makeLabelSprite(`passed ${formatAge(latest.t)}`, "#9f3326");
+      label.position.copy(roomToThree(latest.x, latest.y, 0.92));
+      three.targetTrailGroup.add(label);
+    }
+  }
+}
+
+function recordTargetHistory(targets) {
+  const t = nowMs();
+  for (const target of targets) {
+    const point = {
+      id: target.id || "human",
+      x: clamp(target.x * state.room.width, 0, state.room.width),
+      y: clamp(target.y * state.room.length, 0, state.room.length),
+      confidence: clamp(target.confidence ?? 0.5, 0, 1),
+      motion: clamp(target.motion ?? 0.2, 0, 1),
+      t
+    };
+    state.targetHistory.push(point);
+    state.lastPass = point;
+  }
+  const cutoff = t - 10 * 60 * 1000;
+  state.targetHistory = state.targetHistory.filter((point) => point.t >= cutoff).slice(-900);
+  rebuildTargetTrail();
+}
+
+function upsertObject(object) {
+  const id = object.id || `object-${state.objects.length + 1}`;
+  const existing = state.objects.find((item) => item.id === id);
+  const normalized = {
+    id,
+    label: object.label || id,
+    x: clamp(Number(object.x ?? 0), 0, state.room.width),
+    y: clamp(Number(object.y ?? 0), 0, state.room.length),
+    z: clamp(Number(object.z ?? 0.32), 0.08, state.room.height),
+    confidence: clamp(Number(object.confidence ?? 1), 0, 1),
+    source: object.source || "manual",
+    t: object.t || nowMs()
+  };
+  if (existing) Object.assign(existing, normalized);
+  else state.objects.push(normalized);
+}
+
+function markObjectAtPhone() {
+  const label = ui.objectLabel.value.trim() || `object ${state.objects.length + 1}`;
+  upsertObject({
+    id: `manual-${Date.now()}`,
+    label,
+    x: state.ekf.x[0],
+    y: state.ekf.x[1],
+    z: 0.32,
+    source: "phone-marker"
+  });
+  rebuildObjects();
+  addLog(`Object marked at ${state.ekf.x[0].toFixed(2)}, ${state.ekf.x[1].toFixed(2)}`);
+}
+
+function clearTrails() {
+  state.targetHistory = [];
+  state.lastPass = null;
+  three.targetTrailGroup.clear();
+  addLog("Human pass trails cleared", "warn");
 }
 
 function updateTargets() {
@@ -373,6 +615,18 @@ function updateTargets() {
     );
     mesh.position.copy(roomToThree(target.x * state.room.width, target.y * state.room.length, 0.36));
     three.targetGroup.add(mesh);
+
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.23 + target.confidence * 0.12, 0.012, 8, 36),
+      new THREE.MeshStandardMaterial({ color: 0xc95c4a, transparent: true, opacity: 0.72 })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.copy(roomToThree(target.x * state.room.width, target.y * state.room.length, 0.08));
+    three.targetGroup.add(ring);
+
+    const label = makeLabelSprite("HUMAN NOW", "#9f3326");
+    label.position.copy(roomToThree(target.x * state.room.width, target.y * state.room.length, 0.98));
+    three.targetGroup.add(label);
   }
 }
 
@@ -380,7 +634,7 @@ function resizeThree() {
   const rect = ui.viewer.getBoundingClientRect();
   three.camera.aspect = rect.width / Math.max(1, rect.height);
   three.camera.updateProjectionMatrix();
-  three.renderer.setSize(rect.width, rect.height, false);
+  three.renderer.setSize(rect.width, rect.height, true);
 }
 
 function updateCamera() {
@@ -402,8 +656,11 @@ function updateCamera() {
 function renderLoop() {
   updateCamera();
   const [x, y] = state.ekf.x;
-  three.phoneMesh.position.copy(roomToThree(clamp(x, 0, state.room.width), clamp(y, 0, state.room.length), 0.22));
+  const phonePosition = roomToThree(clamp(x, 0, state.room.width), clamp(y, 0, state.room.length), 0.22);
+  three.phoneMesh.position.copy(phonePosition);
   three.phoneMesh.rotation.z = -THREE.MathUtils.degToRad(state.headingDeg);
+  if (three.phoneRing) three.phoneRing.position.copy(roomToThree(clamp(x, 0, state.room.width), clamp(y, 0, state.room.length), 0.055));
+  if (three.phoneLabel) three.phoneLabel.position.copy(roomToThree(clamp(x, 0, state.room.width), clamp(y, 0, state.room.length), 0.58));
   three.renderer.render(three.scene, three.camera);
   requestAnimationFrame(renderLoop);
 }
@@ -425,15 +682,21 @@ function updateHeatAt(x, y, strength) {
 function addSample(strength = 0.45, source = "manual") {
   const x = clamp(state.ekf.x[0], 0, state.room.width);
   const y = clamp(state.ekf.x[1], 0, state.room.length);
-  const sample = { t: nowMs(), x, y, strength, source, motion: state.motion };
+  const sample = { t: nowMs(), x, y, strength, source, motion: state.motion, imu: imuSnapshot() };
   state.samples.push(sample);
   updateHeatAt(x, y, strength);
   rebuildHeat();
+  rebuildSamples();
   addLog(`RF sample at ${x.toFixed(2)}, ${y.toFixed(2)} (${source})`);
 }
 
 function applyExternalFrame(frame) {
-  state.exportedFrames.push(frame);
+  const enrichedFrame = {
+    ...frame,
+    phone_pose: frame.phone_pose || currentPhonePose(),
+    imu: frame.imu || imuSnapshot()
+  };
+  state.exportedFrames.push(enrichedFrame);
   if (Array.isArray(frame.nodes) && frame.nodes.length) {
     state.anchors = frame.nodes.map((node, index) => ({
       id: node.id || `N${index + 1}`,
@@ -462,7 +725,23 @@ function applyExternalFrame(frame) {
       confidence: clamp(Number(target.confidence ?? 0.5), 0, 1),
       motion: clamp(Number(target.motion ?? 0.2), 0, 1)
     }));
+    recordTargetHistory(state.targets);
     updateTargets();
+  }
+
+  if (Array.isArray(frame.objects)) {
+    for (const object of frame.objects) {
+      upsertObject({
+        id: object.id,
+        label: object.label || object.id || "object",
+        x: clamp(Number(object.x ?? 0.5), 0, 1) * state.room.width,
+        y: clamp(Number(object.y ?? 0.5), 0, 1) * state.room.length,
+        z: Number(object.z ?? 0.32),
+        confidence: object.confidence,
+        source: "external"
+      });
+    }
+    rebuildObjects();
   }
 
   if (frame.heatmap?.values && frame.heatmap.cols && frame.heatmap.rows) {
@@ -512,6 +791,7 @@ function syntheticFrame() {
     source: { kind: "simulator", hardware: "site-demo", channel: 36, bandwidth_mhz: 80 },
     privacy: { consent_scope: "lab", identity_free: true, raw_retention: "none" },
     targets: [{ id: "demo-person", x: tx, y: ty, confidence: 0.78, motion: 0.38, label: "anonymous_presence" }],
+    objects: [{ id: "demo-chair", label: "demo object", x: 0.26, y: 0.72, z: 0.34, confidence: 0.7 }],
     heatmap: { cols, rows, values },
     metrics: { occupancy: 1, confidence: 0.78, motion: 0.38, noise: 0.15, latency_ms: 16 },
     events: []
@@ -539,17 +819,36 @@ async function startSensors() {
 
 function onMotion(event) {
   if (!state.sensorsOn) return;
-  const a = event.acceleration || event.accelerationIncludingGravity || { x: 0, y: 0, z: 0 };
-  const ax = Number(a.x || 0);
-  const ay = Number(a.y || 0);
-  const az = Number(a.z || 0);
+  const linear = event.acceleration || { x: 0, y: 0, z: 0 };
+  const gravity = event.accelerationIncludingGravity || linear;
+  const ax = Number(linear.x || 0);
+  const ay = Number(linear.y || 0);
+  const az = Number(linear.z || 0);
+  const gx = Number(gravity.x || 0);
+  const gy = Number(gravity.y || 0);
+  const gz = Number(gravity.z || 0);
   const heading = THREE.MathUtils.degToRad(state.headingDeg);
   state.accelRoom = {
     x: ax * Math.cos(heading) - ay * Math.sin(heading),
     y: ax * Math.sin(heading) + ay * Math.cos(heading)
   };
-  const magnitude = Math.sqrt(ax * ax + ay * ay + az * az);
-  state.phoneMotion = clamp(state.phoneMotion * 0.86 + Math.max(0, Math.abs(magnitude - 9.81)) * 0.045, 0, 1);
+  const gravityMagnitude = Math.sqrt(gx * gx + gy * gy + gz * gz);
+  const linearMagnitude = Math.sqrt(ax * ax + ay * ay + az * az);
+  state.imu = {
+    ...state.imu,
+    ax,
+    ay,
+    az,
+    gx,
+    gy,
+    gz,
+    roomAx: state.accelRoom.x,
+    roomAy: state.accelRoom.y,
+    magnitude: gravityMagnitude || linearMagnitude,
+    lastAt: nowMs()
+  };
+  const motionSignal = linearMagnitude > 0.01 ? linearMagnitude * 0.08 : Math.max(0, Math.abs(gravityMagnitude - 9.81)) * 0.045;
+  state.phoneMotion = clamp(state.phoneMotion * 0.86 + motionSignal, 0, 1);
   state.motion = Math.max(state.phoneMotion, state.roomMotion);
 }
 
@@ -557,7 +856,10 @@ function onOrientation(event) {
   if (!state.sensorsOn) return;
   if (Number.isFinite(event.alpha)) {
     state.headingDeg = (360 - event.alpha) % 360;
+    state.imu.alpha = Number(event.alpha);
   }
+  if (Number.isFinite(event.beta)) state.imu.beta = Number(event.beta);
+  if (Number.isFinite(event.gamma)) state.imu.gamma = Number(event.gamma);
 }
 
 function tick() {
@@ -583,7 +885,7 @@ function tick() {
 
   if (state.recording) {
     const last = state.path[state.path.length - 1];
-    const point = { t: nowMs(), x: state.ekf.x[0], y: state.ekf.x[1], motion: state.motion, phoneMotion: state.phoneMotion };
+    const point = { t: nowMs(), x: state.ekf.x[0], y: state.ekf.x[1], motion: state.motion, phoneMotion: state.phoneMotion, imu: imuSnapshot() };
     const pushed = !last || Math.hypot(last.x - point.x, last.y - point.y) > 0.035;
     if (pushed) {
       state.path.push(point);
@@ -595,6 +897,11 @@ function tick() {
   if (state.demo && now - state.lastDemoAt > 300) {
     state.lastDemoAt = now;
     applyExternalFrame(syntheticFrame());
+  }
+
+  if (state.targetHistory.length && now - state.lastTrailRender > 2200) {
+    state.lastTrailRender = now;
+    rebuildTargetTrail();
   }
 
   syncUi();
@@ -610,6 +917,15 @@ function syncUi() {
   ui.confidenceMetric.textContent = `${Math.round(state.confidence * 100)}%`;
   ui.sigmaMetric.textContent = state.ekf.sigma().toFixed(2);
   ui.sampleMetric.textContent = String(state.samples.length);
+  ui.trailMetric.textContent = String(state.targetHistory.length);
+  ui.objectMetric.textContent = String(state.objects.length);
+  ui.imuAx.textContent = state.imu.ax.toFixed(2);
+  ui.imuAy.textContent = state.imu.ay.toFixed(2);
+  ui.imuAz.textContent = state.imu.az.toFixed(2);
+  ui.imuYaw.textContent = `${Math.round(state.headingDeg)} deg`;
+  ui.lastPassValue.textContent = state.lastPass ? `Last pass ${formatAge(state.lastPass.t)} at ${state.lastPass.x.toFixed(1)}, ${state.lastPass.y.toFixed(1)}` : "No pass yet";
+  ui.imuChip.textContent = state.imu.lastAt ? `IMU ${formatAge(state.imu.lastAt)}` : "IMU idle";
+  ui.imuChip.classList.toggle("live", state.sensorsOn && !!state.imu.lastAt);
   ui.recordChip.textContent = state.recording ? "Recording" : "Idle";
   ui.recordChip.classList.toggle("live", state.recording);
   ui.recordButton.textContent = state.recording ? "Stop scan" : "Start scan";
@@ -664,8 +980,10 @@ function exportJsonl() {
     source: { kind: "fusion", hardware: "phone-browser-ekf" },
     privacy: { consent_scope: "single_room", identity_free: true, raw_retention: "session" },
     targets: [],
+    objects: state.objects.map((object) => ({ id: object.id, label: object.label, x: object.x / state.room.width, y: object.y / state.room.length, z: object.z, confidence: object.confidence })),
     metrics: { occupancy: 0, confidence: 0, motion: sample.motion, noise: 0.5 },
-    phone_pose: { x: sample.x, y: sample.y }
+    phone_pose: { x: sample.x, y: sample.y, heading_deg: sample.imu?.yaw_deg, sigma: state.ekf.sigma() },
+    imu: sample.imu || imuSnapshot()
   }));
   const blob = new Blob([frames.map((frame) => JSON.stringify(frame)).join("\n")], { type: "application/jsonl" });
   const url = URL.createObjectURL(blob);
@@ -681,6 +999,10 @@ function resetAll() {
   state.samples = [];
   state.path = [];
   state.targets = [];
+  state.targetHistory = [];
+  state.objects = [];
+  state.lastPass = null;
+  state.lastTrailRender = 0;
   state.exportedFrames = [];
   state.heat = Array.from({ length: state.heatRows }, () => Array(state.heatCols).fill(0));
   state.occupancy = 0;
@@ -717,6 +1039,8 @@ ui.cornerButton.addEventListener("click", () => {
   addLog(`Corner ${state.corners.length} marked`);
 });
 ui.sampleButton.addEventListener("click", () => addSample(0.38 + state.motion * 0.35, "manual"));
+ui.objectButton.addEventListener("click", markObjectAtPhone);
+ui.clearTrailButton.addEventListener("click", clearTrails);
 ui.applyRoomButton.addEventListener("click", () => {
   state.room.width = Number(ui.roomWidth.value) || 5;
   state.room.length = Number(ui.roomLength.value) || 4;

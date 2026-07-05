@@ -86,6 +86,26 @@
         "additionalProperties": true
       }
     },
+    "objects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "x", "y"],
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "x": { "type": "number", "minimum": 0, "maximum": 1 },
+          "y": { "type": "number", "minimum": 0, "maximum": 1 },
+          "z": { "type": "number", "minimum": 0 },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "source": {
+            "type": "string",
+            "enum": ["manual", "phone-marker", "external", "simulator", "unknown"]
+          }
+        },
+        "additionalProperties": true
+      }
+    },
     "heatmap": {
       "type": "object",
       "required": ["cols", "rows", "values"],
@@ -125,6 +145,22 @@
         "z": { "type": "number" },
         "heading_deg": { "type": "number" },
         "sigma": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "imu": {
+      "type": "object",
+      "properties": {
+        "ax": { "type": "number" },
+        "ay": { "type": "number" },
+        "az": { "type": "number" },
+        "room_ax": { "type": "number" },
+        "room_ay": { "type": "number" },
+        "magnitude": { "type": "number", "minimum": 0 },
+        "yaw_deg": { "type": "number" },
+        "beta_deg": { "type": "number" },
+        "gamma_deg": { "type": "number" },
+        "phone_motion": { "type": "number", "minimum": 0, "maximum": 1 }
       },
       "additionalProperties": true
     },

@@ -1,4 +1,4 @@
-const CACHE = "phone-rf-room-mapper-v8";
+const CACHE = "phone-rf-room-mapper-v9";
 const ASSETS = [
   "./",
   "./index.html",

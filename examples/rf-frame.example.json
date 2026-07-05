@@ -26,6 +26,17 @@
       "label": "anonymous_presence"
     }
   ],
+  "objects": [
+    {
+      "id": "chair-1",
+      "label": "chair",
+      "x": 0.24,
+      "y": 0.72,
+      "z": 0.35,
+      "confidence": 0.7,
+      "source": "manual"
+    }
+  ],
   "heatmap": {
     "cols": 4,
     "rows": 3,
@@ -40,6 +51,18 @@
     "y": 0.8,
     "heading_deg": 42,
     "sigma": 0.41
+  },
+  "imu": {
+    "ax": 0.02,
+    "ay": -0.01,
+    "az": 0.04,
+    "room_ax": 0.02,
+    "room_ay": 0,
+    "magnitude": 9.81,
+    "yaw_deg": 42,
+    "beta_deg": 3,
+    "gamma_deg": -1,
+    "phone_motion": 0.08
   },
   "metrics": {
     "occupancy": 1,

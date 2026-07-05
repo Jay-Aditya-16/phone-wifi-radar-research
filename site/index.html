@@ -22,6 +22,7 @@
           <span class="chip warn" id="truthChip">Phone-only is not CSI</span>
           <span class="chip" id="sensorChip">Sensors off</span>
           <span class="chip" id="feedChip">No feed</span>
+          <span class="chip" id="imuChip">IMU idle</span>
           <span class="chip" id="recordChip">Idle</span>
         </div>
       </header>
@@ -40,7 +41,14 @@
               <button type="button" id="resetButton">Reset</button>
             </div>
           </div>
-          <div id="viewer" class="viewer" aria-label="3D RF room map. Drag one finger to rotate. Pinch two fingers to zoom. Move two fingers together to pan the room. On desktop, hold Shift and drag to pan."></div>
+          <div id="viewer" class="viewer" aria-label="3D RF room map. Drag one finger to rotate. Pinch two fingers to zoom. Move two fingers together to pan the room. On desktop, hold Shift and drag to pan.">
+            <div class="map-legend" aria-hidden="true">
+              <span><i class="legend-dot phone"></i>Phone</span>
+              <span><i class="legend-dot human"></i>Human pass</span>
+              <span><i class="legend-dot object"></i>Object</span>
+              <span><i class="legend-dot rf"></i>RF volume</span>
+            </div>
+          </div>
           <div class="hud">
             <div><span>X</span><strong id="xReadout">0.00 m</strong></div>
             <div><span>Y</span><strong id="yReadout">0.00 m</strong></div>
@@ -65,6 +73,13 @@
               <button type="button" id="cornerButton">Mark corner</button>
               <button type="button" id="sampleButton">Add RF sample</button>
             </div>
+            <label class="full object-label">Object label
+              <input id="objectLabel" type="text" maxlength="24" value="object">
+            </label>
+            <div class="button-grid">
+              <button type="button" id="objectButton">Mark object</button>
+              <button type="button" id="clearTrailButton">Clear trails</button>
+            </div>
           </section>
 
           <section class="panel">
@@ -87,6 +102,21 @@
             <article><span>Confidence</span><strong id="confidenceMetric">0%</strong></article>
             <article><span>EKF sigma</span><strong id="sigmaMetric">0.50</strong></article>
             <article><span>Samples</span><strong id="sampleMetric">0</strong></article>
+            <article><span>Human trail</span><strong id="trailMetric">0</strong></article>
+            <article><span>Objects</span><strong id="objectMetric">0</strong></article>
+          </section>
+
+          <section class="panel imu-panel">
+            <div class="panel-title">
+              <h2>IMU</h2>
+              <span id="lastPassValue" class="subtle">No pass yet</span>
+            </div>
+            <div class="imu-grid">
+              <div><span>Ax</span><strong id="imuAx">0.00</strong></div>
+              <div><span>Ay</span><strong id="imuAy">0.00</strong></div>
+              <div><span>Az</span><strong id="imuAz">0.00</strong></div>
+              <div><span>Yaw</span><strong id="imuYaw">0 deg</strong></div>
+            </div>
           </section>
 
           <section class="panel instructions">

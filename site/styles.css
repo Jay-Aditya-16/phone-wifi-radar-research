@@ -213,6 +213,54 @@ h2 {
   overscroll-behavior: contain;
 }
 
+.map-legend {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+  max-width: calc(100% - 1.5rem);
+  pointer-events: none;
+}
+
+.map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid rgba(18, 32, 27, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.84);
+  color: var(--muted);
+  padding: 0.38rem 0.48rem;
+  font-size: 0.72rem;
+  backdrop-filter: blur(12px);
+}
+
+.legend-dot {
+  width: 0.58rem;
+  height: 0.58rem;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.legend-dot.phone {
+  background: var(--blue);
+}
+
+.legend-dot.human {
+  background: var(--red);
+}
+
+.legend-dot.object {
+  background: var(--amber);
+}
+
+.legend-dot.rf {
+  background: var(--green);
+}
+
 .viewer.is-dragging {
   cursor: grabbing;
 }
@@ -303,6 +351,10 @@ label input {
   margin-top: 0.65rem;
 }
 
+.object-label {
+  margin-top: 0.68rem;
+}
+
 .button-grid button {
   flex: 1 1 auto;
 }
@@ -339,6 +391,36 @@ label input {
 .metric-grid strong {
   font-size: 1.25rem;
   line-height: 1;
+}
+
+.subtle {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.imu-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.imu-grid div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+  padding: 0.58rem;
+}
+
+.imu-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.imu-grid strong {
+  display: block;
+  margin-top: 0.14rem;
+  font-size: 0.95rem;
 }
 
 .instructions ol,
@@ -453,6 +535,15 @@ label input {
     padding-inline: 0.45rem;
   }
 
+  .map-legend {
+    bottom: auto;
+    gap: 0.32rem;
+  }
+
+  .map-legend span {
+    padding: 0.32rem 0.4rem;
+  }
+
   .viewer-panel {
     grid-template-rows: auto minmax(23rem, 68vh);
   }
@@ -462,6 +553,10 @@ label input {
   }
 
   .hud {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .imu-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
