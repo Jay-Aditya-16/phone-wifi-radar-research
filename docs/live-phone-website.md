@@ -72,7 +72,8 @@ Then tap `Connect`.
 
 - Drag with one finger to rotate the room.
 - Pinch with two fingers to zoom in or out.
-- On desktop, drag with the mouse to rotate and use the wheel or trackpad scroll to zoom.
+- Move two fingers together to pan or reposition the room in the viewer.
+- On desktop, drag with the mouse to rotate, hold Shift and drag to pan, and use the wheel or trackpad scroll to zoom.
 
 ## Phone Placement
 

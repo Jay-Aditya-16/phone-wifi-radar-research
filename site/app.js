@@ -35,7 +35,7 @@ const ui = {
   eventLog: $("#eventLog")
 };
 
-document.documentElement.dataset.appBuild = "viewer-gestures-v1";
+document.documentElement.dataset.appBuild = "viewer-pan-v2";
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -224,7 +224,9 @@ const three = {
   wallGroup: new THREE.Group(),
   angle: Math.PI * 0.28,
   pitch: 0.72,
-  distance: 7.5
+  distance: 7.5,
+  targetX: 0,
+  targetZ: 0
 };
 
 function cameraDistanceLimits() {
@@ -245,6 +247,21 @@ function setCameraDistance(distance) {
   three.distance = clamp(distance, limits.min, limits.max);
 }
 
+function cameraPanLimit() {
+  return Math.hypot(state.room.width, state.room.length) * 0.85;
+}
+
+function setCameraTarget(x, z) {
+  const limit = cameraPanLimit();
+  three.targetX = clamp(x, -limit, limit);
+  three.targetZ = clamp(z, -limit, limit);
+}
+
+function resetCameraView() {
+  setCameraDistance(defaultCameraDistance());
+  setCameraTarget(0, 0);
+}
+
 function setupThree() {
   three.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   three.renderer.setClearColor(0xdfe8e2, 1);
@@ -262,7 +279,7 @@ function setupThree() {
   three.phoneMesh.rotation.x = Math.PI / 2;
   three.scene.add(three.phoneMesh);
 
-  setCameraDistance(defaultCameraDistance());
+  resetCameraView();
   rebuildRoom();
   resizeThree();
   requestAnimationFrame(renderLoop);
@@ -367,17 +384,19 @@ function resizeThree() {
 }
 
 function updateCamera() {
-  const target = new THREE.Vector3(0, 0, 0);
+  const target = new THREE.Vector3(three.targetX, 0, three.targetZ);
   setCameraDistance(three.distance);
   three.camera.position.set(
-    Math.cos(three.angle) * three.distance,
+    target.x + Math.cos(three.angle) * three.distance,
     three.pitch * three.distance,
-    Math.sin(three.angle) * three.distance
+    target.z + Math.sin(three.angle) * three.distance
   );
   three.camera.lookAt(target);
   ui.viewer.dataset.cameraAngle = three.angle.toFixed(3);
   ui.viewer.dataset.cameraPitch = three.pitch.toFixed(3);
   ui.viewer.dataset.cameraDistance = three.distance.toFixed(2);
+  ui.viewer.dataset.cameraTargetX = three.targetX.toFixed(2);
+  ui.viewer.dataset.cameraTargetZ = three.targetZ.toFixed(2);
 }
 
 function renderLoop() {
@@ -666,6 +685,7 @@ function resetAll() {
   state.heat = Array.from({ length: state.heatRows }, () => Array(state.heatCols).fill(0));
   state.occupancy = 0;
   state.confidence = 0;
+  resetCameraView();
   rebuildRoom();
   updateTargets();
   addLog("Map reset", "warn");
@@ -701,7 +721,7 @@ ui.applyRoomButton.addEventListener("click", () => {
   state.room.width = Number(ui.roomWidth.value) || 5;
   state.room.length = Number(ui.roomLength.value) || 4;
   state.room.height = Number(ui.roomHeight.value) || 2.7;
-  setCameraDistance(defaultCameraDistance());
+  resetCameraView();
   rebuildRoom();
   addLog(`Room set to ${state.room.width}m x ${state.room.length}m`);
 });
@@ -725,7 +745,11 @@ const cameraGesture = {
   startAngle: 0,
   startPitch: 0,
   startPinchDistance: 0,
-  startCameraDistance: three.distance
+  startPinchCenterX: 0,
+  startPinchCenterY: 0,
+  startCameraDistance: three.distance,
+  startTargetX: 0,
+  startTargetZ: 0
 };
 
 function gesturePoints() {
@@ -737,18 +761,48 @@ function pinchDistance(points) {
   return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
 }
 
+function pinchCenter(points) {
+  return {
+    x: (points[0].x + points[1].x) / 2,
+    y: (points[0].y + points[1].y) / 2
+  };
+}
+
+function panCameraTarget(screenDx, screenDy, startTargetX, startTargetZ) {
+  const rect = ui.viewer.getBoundingClientRect();
+  const fovRad = THREE.MathUtils.degToRad(three.camera.fov);
+  const worldPerPixel = (2 * Math.tan(fovRad / 2) * three.distance) / Math.max(1, rect.height);
+  const forward = new THREE.Vector3(-Math.cos(three.angle), 0, -Math.sin(three.angle)).normalize();
+  const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+  const panScale = worldPerPixel * 0.9;
+  const panX = (-screenDx * right.x + screenDy * forward.x) * panScale;
+  const panZ = (-screenDx * right.z + screenDy * forward.z) * panScale;
+  setCameraTarget(startTargetX + panX, startTargetZ + panZ);
+}
+
 function startCameraGesture() {
   const points = gesturePoints();
   if (points.length >= 2) {
+    const center = pinchCenter(points);
     cameraGesture.mode = "pinch";
     cameraGesture.startPinchDistance = Math.max(1, pinchDistance(points));
+    cameraGesture.startPinchCenterX = center.x;
+    cameraGesture.startPinchCenterY = center.y;
     cameraGesture.startCameraDistance = three.distance;
+    cameraGesture.startTargetX = three.targetX;
+    cameraGesture.startTargetZ = three.targetZ;
     return;
   }
   if (points.length === 1) {
-    cameraGesture.mode = "rotate";
     cameraGesture.startX = points[0].x;
     cameraGesture.startY = points[0].y;
+    if (points[0].pan) {
+      cameraGesture.mode = "pan";
+      cameraGesture.startTargetX = three.targetX;
+      cameraGesture.startTargetZ = three.targetZ;
+      return;
+    }
+    cameraGesture.mode = "rotate";
     cameraGesture.startAngle = three.angle;
     cameraGesture.startPitch = three.pitch;
     return;
@@ -760,12 +814,24 @@ function updateCameraGesture() {
   const points = gesturePoints();
   if (points.length >= 2) {
     if (cameraGesture.mode !== "pinch") startCameraGesture();
+    const center = pinchCenter(points);
     const currentDistance = Math.max(1, pinchDistance(points));
     const scale = cameraGesture.startPinchDistance / currentDistance;
     setCameraDistance(cameraGesture.startCameraDistance * scale);
+    panCameraTarget(
+      center.x - cameraGesture.startPinchCenterX,
+      center.y - cameraGesture.startPinchCenterY,
+      cameraGesture.startTargetX,
+      cameraGesture.startTargetZ
+    );
     return;
   }
   if (points.length === 1) {
+    if (points[0].pan) {
+      if (cameraGesture.mode !== "pan") startCameraGesture();
+      panCameraTarget(points[0].x - cameraGesture.startX, points[0].y - cameraGesture.startY, cameraGesture.startTargetX, cameraGesture.startTargetZ);
+      return;
+    }
     if (cameraGesture.mode !== "rotate") startCameraGesture();
     three.angle = cameraGesture.startAngle + (points[0].x - cameraGesture.startX) * 0.008;
     three.pitch = clamp(cameraGesture.startPitch + (cameraGesture.startY - points[0].y) * 0.004, 0.28, 1.35);
@@ -783,7 +849,7 @@ function endCameraPointer(event) {
 
 ui.viewer.addEventListener("pointerdown", (event) => {
   event.preventDefault();
-  cameraGesture.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  cameraGesture.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY, pan: event.shiftKey || event.altKey });
   ui.viewer.setPointerCapture(event.pointerId);
   ui.viewer.classList.add("is-dragging");
   startCameraGesture();
@@ -792,7 +858,7 @@ ui.viewer.addEventListener("pointerdown", (event) => {
 ui.viewer.addEventListener("pointermove", (event) => {
   if (!cameraGesture.pointers.has(event.pointerId)) return;
   event.preventDefault();
-  cameraGesture.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  cameraGesture.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY, pan: event.shiftKey || event.altKey });
   updateCameraGesture();
 });
 
