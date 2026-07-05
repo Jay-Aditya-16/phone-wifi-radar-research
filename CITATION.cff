@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+title: "Phone Wi-Fi Radar Research"
+message: "If you use this research scaffold, cite the repository and the upstream papers/tools listed in docs/references.md."
+type: software
+authors:
+  - name: "Research scaffold contributors"
+repository-code: "https://github.com/Jay-Aditya-16/phone-wifi-radar-research"
+license: MIT
+version: "0.1.0"
+date-released: "2026-07-05"

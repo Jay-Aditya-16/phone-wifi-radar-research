@@ -1,0 +1,45 @@
+{
+  "schema_version": "0.1.0",
+  "timestamp_ms": 1760000000000,
+  "source": {
+    "kind": "simulator",
+    "hardware": "synthetic-room-v0",
+    "channel": 36,
+    "bandwidth_mhz": 80
+  },
+  "privacy": {
+    "consent_scope": "lab",
+    "identity_free": true,
+    "raw_retention": "none"
+  },
+  "nodes": [
+    { "id": "N1", "x": 0.08, "y": 0.13, "rssi_dbm": -48 },
+    { "id": "N2", "x": 0.92, "y": 0.18, "rssi_dbm": -52 }
+  ],
+  "targets": [
+    {
+      "id": "anon-1",
+      "x": 0.58,
+      "y": 0.45,
+      "confidence": 0.82,
+      "motion": 0.31,
+      "label": "anonymous_presence"
+    }
+  ],
+  "heatmap": {
+    "cols": 4,
+    "rows": 3,
+    "values": [0.02, 0.04, 0.06, 0.03, 0.05, 0.4, 0.72, 0.11, 0.02, 0.08, 0.15, 0.07]
+  },
+  "metrics": {
+    "occupancy": 1,
+    "confidence": 0.82,
+    "motion": 0.31,
+    "noise": 0.16,
+    "latency_ms": 27
+  },
+  "events": [
+    { "level": "info", "message": "Synthetic RF frame" }
+  ]
+}
+
