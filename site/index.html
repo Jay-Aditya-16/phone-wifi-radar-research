@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#0f1c18">
+    <title>Phone RF Room Mapper</title>
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <div>
+            <h1>Phone RF Room Mapper</h1>
+            <p>EKF trajectory, RF heat, external CSI/BFI ingest</p>
+          </div>
+        </div>
+        <div class="status-strip">
+          <span class="chip warn" id="truthChip">Phone-only is not CSI</span>
+          <span class="chip" id="sensorChip">Sensors off</span>
+          <span class="chip" id="feedChip">No feed</span>
+          <span class="chip" id="recordChip">Idle</span>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="viewer-panel">
+          <div class="viewer-toolbar">
+            <div class="segmented" aria-label="Mode">
+              <button class="seg active" type="button" data-mode="walk">Walk scan</button>
+              <button class="seg" type="button" data-mode="fixed">Fixed monitor</button>
+              <button class="seg" type="button" data-mode="external">External CSI</button>
+            </div>
+            <div class="toolbar-actions">
+              <button class="primary" type="button" id="sensorButton">Start phone sensors</button>
+              <button type="button" id="recordButton">Start scan</button>
+              <button type="button" id="resetButton">Reset</button>
+            </div>
+          </div>
+          <div id="viewer" class="viewer" aria-label="3D RF room map"></div>
+          <div class="hud">
+            <div><span>X</span><strong id="xReadout">0.00 m</strong></div>
+            <div><span>Y</span><strong id="yReadout">0.00 m</strong></div>
+            <div><span>Heading</span><strong id="headingReadout">0 deg</strong></div>
+            <div><span>Motion</span><strong id="motionReadout">0.00</strong></div>
+          </div>
+        </section>
+
+        <aside class="side">
+          <section class="panel">
+            <div class="panel-title">
+              <h2>Room</h2>
+              <button type="button" id="applyRoomButton">Apply</button>
+            </div>
+            <div class="input-grid">
+              <label>Width <input id="roomWidth" type="number" min="2" max="20" step="0.1" value="5"></label>
+              <label>Length <input id="roomLength" type="number" min="2" max="20" step="0.1" value="4"></label>
+              <label>Height <input id="roomHeight" type="number" min="2" max="5" step="0.1" value="2.7"></label>
+            </div>
+            <div class="button-grid">
+              <button type="button" id="originButton">Set origin</button>
+              <button type="button" id="cornerButton">Mark corner</button>
+              <button type="button" id="sampleButton">Add RF sample</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title">
+              <h2>External Feed</h2>
+              <span class="dot" id="feedDot"></span>
+            </div>
+            <label class="full">WebSocket
+              <input id="wsUrl" type="url" spellcheck="false" value="ws://192.168.1.10:5006/scan">
+            </label>
+            <div class="button-grid">
+              <button type="button" id="connectButton">Connect</button>
+              <button type="button" id="demoButton">Demo feed</button>
+              <button type="button" id="exportButton">Export JSONL</button>
+            </div>
+          </section>
+
+          <section class="metric-grid" aria-label="Metrics">
+            <article><span>Occupancy</span><strong id="occupancyMetric">0</strong></article>
+            <article><span>Confidence</span><strong id="confidenceMetric">0%</strong></article>
+            <article><span>EKF sigma</span><strong id="sigmaMetric">0.50</strong></article>
+            <article><span>Samples</span><strong id="sampleMetric">0</strong></article>
+          </section>
+
+          <section class="panel instructions">
+            <h2>Use It</h2>
+            <ol>
+              <li>Serve this folder on your laptop, open it on the phone, then tap <strong>Start phone sensors</strong>.</li>
+              <li>Stand at the doorway, phone vertical at chest height, point the top edge toward the far wall, then tap <strong>Set origin</strong>.</li>
+              <li>For a room scan, walk the perimeter slowly, pause at each corner, and tap <strong>Mark corner</strong>. Walk a lawnmower path through the room and tap <strong>Add RF sample</strong> at grid points.</li>
+              <li>For person movement, place the phone fixed on a wall shelf or tripod, screen facing the room. Real movement needs an external CSI/BFI/RTT/RSSI feed. Phone-only mode only detects the phone moving.</li>
+              <li>Connect ESP32/Nexmon/PicoScenes/Wi-BFI output through the WebSocket schema to fill the heatmap and target markers.</li>
+            </ol>
+          </section>
+
+          <section class="panel log-panel">
+            <div class="panel-title">
+              <h2>Log</h2>
+              <button type="button" id="clearLogButton">Clear</button>
+            </div>
+            <ol id="eventLog" class="event-log"></ol>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

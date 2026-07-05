@@ -1,0 +1,9 @@
+{
+  "name": "Phone RF Room Mapper",
+  "short_name": "RF Mapper",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#eff3ee",
+  "theme_color": "#0f1c18",
+  "icons": []
+}

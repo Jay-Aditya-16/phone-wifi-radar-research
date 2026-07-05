@@ -99,6 +99,35 @@
       },
       "additionalProperties": false
     },
+    "ranges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["nodeId", "range_m"],
+        "properties": {
+          "nodeId": { "type": "string" },
+          "range_m": { "type": "number", "minimum": 0 },
+          "variance": { "type": "number", "minimum": 0 },
+          "rssi_dbm": { "type": "number" },
+          "source": {
+            "type": "string",
+            "enum": ["rtt", "rssi_model", "csi_model", "manual", "simulator"]
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "phone_pose": {
+      "type": "object",
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" },
+        "heading_deg": { "type": "number" },
+        "sigma": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
     "metrics": {
       "type": "object",
       "required": ["occupancy", "confidence", "motion", "noise"],
@@ -126,4 +155,3 @@
   },
   "additionalProperties": false
 }
-
