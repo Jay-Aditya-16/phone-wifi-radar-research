@@ -35,7 +35,7 @@ const ui = {
   eventLog: $("#eventLog")
 };
 
-document.documentElement.dataset.appBuild = "ekf-phone-motion-v2";
+document.documentElement.dataset.appBuild = "viewer-gestures-v1";
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -227,6 +227,24 @@ const three = {
   distance: 7.5
 };
 
+function cameraDistanceLimits() {
+  const diagonal = Math.hypot(state.room.width, state.room.length);
+  return {
+    min: clamp(diagonal * 0.34, 2.2, 6),
+    max: clamp(diagonal * 2.6, 9, 40)
+  };
+}
+
+function defaultCameraDistance() {
+  const diagonal = Math.hypot(state.room.width, state.room.length);
+  return clamp(diagonal * 1.15, 5.5, 18);
+}
+
+function setCameraDistance(distance) {
+  const limits = cameraDistanceLimits();
+  three.distance = clamp(distance, limits.min, limits.max);
+}
+
 function setupThree() {
   three.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   three.renderer.setClearColor(0xdfe8e2, 1);
@@ -244,6 +262,7 @@ function setupThree() {
   three.phoneMesh.rotation.x = Math.PI / 2;
   three.scene.add(three.phoneMesh);
 
+  setCameraDistance(defaultCameraDistance());
   rebuildRoom();
   resizeThree();
   requestAnimationFrame(renderLoop);
@@ -349,12 +368,16 @@ function resizeThree() {
 
 function updateCamera() {
   const target = new THREE.Vector3(0, 0, 0);
+  setCameraDistance(three.distance);
   three.camera.position.set(
     Math.cos(three.angle) * three.distance,
     three.pitch * three.distance,
     Math.sin(three.angle) * three.distance
   );
   three.camera.lookAt(target);
+  ui.viewer.dataset.cameraAngle = three.angle.toFixed(3);
+  ui.viewer.dataset.cameraPitch = three.pitch.toFixed(3);
+  ui.viewer.dataset.cameraDistance = three.distance.toFixed(2);
 }
 
 function renderLoop() {
@@ -678,6 +701,7 @@ ui.applyRoomButton.addEventListener("click", () => {
   state.room.width = Number(ui.roomWidth.value) || 5;
   state.room.length = Number(ui.roomLength.value) || 4;
   state.room.height = Number(ui.roomHeight.value) || 2.7;
+  setCameraDistance(defaultCameraDistance());
   rebuildRoom();
   addLog(`Room set to ${state.room.width}m x ${state.room.length}m`);
 });
@@ -693,21 +717,95 @@ ui.demoButton.addEventListener("click", () => {
 ui.exportButton.addEventListener("click", exportJsonl);
 ui.clearLogButton.addEventListener("click", () => ui.eventLog.replaceChildren());
 
-let dragging = false;
-let dragStart = { x: 0, y: 0, angle: 0, pitch: 0 };
+const cameraGesture = {
+  pointers: new Map(),
+  mode: "idle",
+  startX: 0,
+  startY: 0,
+  startAngle: 0,
+  startPitch: 0,
+  startPinchDistance: 0,
+  startCameraDistance: three.distance
+};
+
+function gesturePoints() {
+  return [...cameraGesture.pointers.values()];
+}
+
+function pinchDistance(points) {
+  if (points.length < 2) return 0;
+  return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+}
+
+function startCameraGesture() {
+  const points = gesturePoints();
+  if (points.length >= 2) {
+    cameraGesture.mode = "pinch";
+    cameraGesture.startPinchDistance = Math.max(1, pinchDistance(points));
+    cameraGesture.startCameraDistance = three.distance;
+    return;
+  }
+  if (points.length === 1) {
+    cameraGesture.mode = "rotate";
+    cameraGesture.startX = points[0].x;
+    cameraGesture.startY = points[0].y;
+    cameraGesture.startAngle = three.angle;
+    cameraGesture.startPitch = three.pitch;
+    return;
+  }
+  cameraGesture.mode = "idle";
+}
+
+function updateCameraGesture() {
+  const points = gesturePoints();
+  if (points.length >= 2) {
+    if (cameraGesture.mode !== "pinch") startCameraGesture();
+    const currentDistance = Math.max(1, pinchDistance(points));
+    const scale = cameraGesture.startPinchDistance / currentDistance;
+    setCameraDistance(cameraGesture.startCameraDistance * scale);
+    return;
+  }
+  if (points.length === 1) {
+    if (cameraGesture.mode !== "rotate") startCameraGesture();
+    three.angle = cameraGesture.startAngle + (points[0].x - cameraGesture.startX) * 0.008;
+    three.pitch = clamp(cameraGesture.startPitch + (cameraGesture.startY - points[0].y) * 0.004, 0.28, 1.35);
+  }
+}
+
+function endCameraPointer(event) {
+  cameraGesture.pointers.delete(event.pointerId);
+  if (ui.viewer.hasPointerCapture?.(event.pointerId)) {
+    ui.viewer.releasePointerCapture(event.pointerId);
+  }
+  ui.viewer.classList.toggle("is-dragging", cameraGesture.pointers.size > 0);
+  startCameraGesture();
+}
+
 ui.viewer.addEventListener("pointerdown", (event) => {
-  dragging = true;
-  dragStart = { x: event.clientX, y: event.clientY, angle: three.angle, pitch: three.pitch };
+  event.preventDefault();
+  cameraGesture.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
   ui.viewer.setPointerCapture(event.pointerId);
+  ui.viewer.classList.add("is-dragging");
+  startCameraGesture();
 });
+
 ui.viewer.addEventListener("pointermove", (event) => {
-  if (!dragging) return;
-  three.angle = dragStart.angle + (event.clientX - dragStart.x) * 0.008;
-  three.pitch = clamp(dragStart.pitch + (dragStart.y - event.clientY) * 0.004, 0.35, 1.2);
+  if (!cameraGesture.pointers.has(event.pointerId)) return;
+  event.preventDefault();
+  cameraGesture.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  updateCameraGesture();
 });
-ui.viewer.addEventListener("pointerup", () => {
-  dragging = false;
-});
+
+ui.viewer.addEventListener("pointerup", endCameraPointer);
+ui.viewer.addEventListener("pointercancel", endCameraPointer);
+ui.viewer.addEventListener("lostpointercapture", endCameraPointer);
+ui.viewer.addEventListener("wheel", (event) => {
+  event.preventDefault();
+  setCameraDistance(three.distance * Math.exp(event.deltaY * 0.001));
+}, { passive: false });
+for (const gestureEvent of ["gesturestart", "gesturechange", "gestureend"]) {
+  ui.viewer.addEventListener(gestureEvent, (event) => event.preventDefault(), { passive: false });
+}
 
 window.addEventListener("resize", resizeThree);
 window.addEventListener("devicemotion", onMotion);

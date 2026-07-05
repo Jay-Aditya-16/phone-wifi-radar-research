@@ -207,7 +207,14 @@ h2 {
   border-radius: 8px;
   background: #dfe8e2;
   box-shadow: var(--shadow);
+  cursor: grab;
   touch-action: none;
+  user-select: none;
+  overscroll-behavior: contain;
+}
+
+.viewer.is-dragging {
+  cursor: grabbing;
 }
 
 .viewer canvas {

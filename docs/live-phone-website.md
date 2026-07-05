@@ -68,6 +68,12 @@ ws://192.168.1.10:5006/scan
 
 Then tap `Connect`.
 
+## 3D Map Controls
+
+- Drag with one finger to rotate the room.
+- Pinch with two fingers to zoom in or out.
+- On desktop, drag with the mouse to rotate and use the wheel or trackpad scroll to zoom.
+
 ## Phone Placement
 
 ### Walk Scan
